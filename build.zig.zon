@@ -1,0 +1,20 @@
+.{
+    .name = .csar_abi,
+    .version = "0.1.0",
+    .fingerprint = 0x1fa2b3ed55dc7e5a,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .csar = .{
+            .url = "https://github.com/ajfriend/csar_zig/archive/refs/tags/v0.5.0.tar.gz",
+            .hash = "csar-0.5.0-bkw2Ibe2AgC2YrKYZ-seMuDHGHqy_jnr2AGQ4FuUMk-T",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "include",
+        "readme.md",
+        "LICENSE",
+    },
+}

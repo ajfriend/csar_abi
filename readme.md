@@ -1,16 +1,25 @@
-# csar_c
+# csar_abi
 
-The C-ABI waist over [`csar`](https://github.com/ajfriend/csar_zig).
-`csar_zig` stays pure Zig (`b.addModule` only); this repo owns the C
-door surface and builds it in two artifact shapes from one `capi.zig`:
+The stable ABI over [`csar`](https://github.com/ajfriend/csar_zig).
+`csar_zig` owns the solver and its Zig API; this repo owns the one C
+door surface (`capi.zig`) that every non-Zig consumer goes through,
+and publishes it as:
 
-- a native static archive plus `include/csar.h` — what `csar_py` links, and
-- a `wasm32-freestanding` module — what browser consumers load.
+- **two artifact shapes** — a native static archive, and a
+  `wasm32-freestanding` module (built from two comptime roots, so the
+  module graph, not an export list, decides what each ships), and
+- **two declarations of the same contract** — `include/csar.h` for
+  hosts with a C compiler, and `csar.js` for hosts without one, where
+  the declaration must also carry what a compiler would otherwise
+  handle (struct byte offsets, code tables, instantiation).
 
-Two comptime roots, not two export lists: `src/native.zig` and
-`src/wasm.zig` each pull in the doors they ship, and the module graph
-does the excluding. ABI releases are deliberate pinned events —
-consumers pin this repo by tag, and this repo pins `csar` by tag.
+Declarations live here because lockstep is only enforceable inside
+one repo — CI diffs both against `capi.zig`. Idiomatic bindings
+(`csar_py`, an npm package if one is ever warranted) live in their
+own repos and pin this one by tag. ABI releases are deliberate
+events: consumers pin a tag, and this repo pins `csar` by tag; the
+ABI — doors, struct layout, code tables — drives version bumps, not
+upstream releases.
 
 This consolidates the two hand-rolled shims that preceded it (the one
 vendored inside `csar_py`, and the standalone `csar_wasm`), which had

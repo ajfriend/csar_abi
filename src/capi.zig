@@ -13,14 +13,16 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const csar = @import("csar");
+const meta = @import("abi_meta");
 
 /// Version of this ABI (the doors, `csar_result`, the code tables) and
 /// of the `csar` solver it is built over. The ABI version tracks ABI
 /// change, not upstream releases — a solver re-pin with no ABI change
-/// is a patch bump. Kept in lockstep with build.zig.zon by hand until
-/// the drift gate covers them.
-const abi_version = "0.1.0";
-const upstream_version = "0.5.0";
+/// is a patch bump. Both strings are injected by build.zig from
+/// build.zig.zon (the version, and the csar dependency pin), so there
+/// is exactly one source and a re-pin updates the doors automatically.
+const abi_version: [:0]const u8 = meta.abi_version ++ "";
+const upstream_version: [:0]const u8 = meta.upstream_version ++ "";
 
 pub export fn csar_abi_version() [*:0]const u8 {
     return abi_version;
@@ -59,9 +61,33 @@ pub const CSAR_STATUS_PRECISION_FLOOR: i32 = 3;
 // `method` in-param values, mapping onto `csar.Method`.
 // CSAR_METHOD_AUTO is upstream's alias for its recommended path;
 // `csar_result.method` reports the concrete path that produced the
-// outcome (-1 when the outcome carries no path tag, i.e. infeasible).
+// outcome (CSAR_METHOD_NONE when the outcome carries no path tag,
+// i.e. infeasible).
 pub const CSAR_METHOD_TRUST: i32 = 0;
 pub const CSAR_METHOD_AUTO: i32 = 1;
+
+// Named sentinels for "not set": `csar_result.status` before a CSAR_OK
+// return, and `csar_result.method` on outcomes with no path tag.
+// Declared so csar.h and csar.js name them instead of a bare -1.
+pub const CSAR_STATUS_NONE: i32 = -1;
+pub const CSAR_METHOD_NONE: i32 = -1;
+
+comptime {
+    // The in-param switch in csar_solve necessarily has a runtime
+    // `else` (C hands it an arbitrary i32), so growth in csar.Method
+    // has no loud failure path there — this is it.
+    if (@typeInfo(csar.Method).@"enum".fields.len != 2)
+        @compileError("csar.Method grew: extend the CSAR_METHOD_* table, csar.h, and csar.js");
+}
+
+// Upstream's SolveOptions defaults, derived at comptime so bindings
+// name them instead of each hardcoding its own copy. Mirrored as
+// #defines in csar.h.
+const default_opts: csar.SolveOptions = .{};
+pub const CSAR_DEFAULT_GAP_TOL: f64 = default_opts.gap_tol;
+pub const CSAR_DEFAULT_N_HULL: i32 = default_opts.n_hull;
+pub const CSAR_DEFAULT_COPLANARITY_TOL: f64 = default_opts.coplanarity_tol;
+pub const CSAR_DEFAULT_MAX_OUTER: u32 = default_opts.max_outer;
 
 /// The one declared result layout, shared by every target: the native
 /// header declares it as `csar_result`, and `csar.js` reads it from
@@ -74,7 +100,8 @@ pub const CSAR_METHOD_AUTO: i32 = 1;
 ///   precision_floor:  q, sigma, gap, gap_floor, method, n_iters
 ///                     (last certified iterate; not a certified cone)
 ///   infeasible:       residual
-/// Fields the variant doesn't define hold NaN (f64) / -1 / 0.
+/// Fields the variant doesn't define hold NaN (f64), the *_NONE
+/// sentinel (ints), or 0 (n_iters).
 pub const Result = extern struct {
     /// Eigenbasis of A, row-major: q[r*3 + c] = Q(r, c). Column i is
     /// the unit eigenvector paired with sigma[i]; column 0 is the
@@ -90,17 +117,33 @@ pub const Result = extern struct {
     /// at the last certified iterate.
     gap: f64,
     /// The smallest gap certifiable at f64 for this input's geometry
-    /// (uncertified outcomes only; `Uncertified.gap_floor` upstream).
+    /// (`Uncertified.gap_floor` upstream).
     gap_floor: f64,
-    /// Farkas witness magnitude (infeasible only).
+    /// Farkas witness magnitude.
     residual: f64,
-    /// CSAR_STATUS_* on CSAR_OK; -1 otherwise.
+    /// CSAR_STATUS_* on CSAR_OK; CSAR_STATUS_NONE otherwise.
     status: i32,
-    /// CSAR_METHOD_* concrete path tag; -1 when the outcome has none.
+    /// CSAR_METHOD_* concrete path tag; CSAR_METHOD_NONE if the
+    /// outcome has none.
     method: i32,
     /// Total solver iterations (`Diagnostics.totalIters()` upstream).
     n_iters: u32,
 };
+
+comptime {
+    // The layout IS the contract: csar.h's struct and csar.js's byte
+    // offsets both restate these numbers, so a reorder or retype here
+    // must fail loudly, not marshal garbage quietly.
+    std.debug.assert(@offsetOf(Result, "q") == 0);
+    std.debug.assert(@offsetOf(Result, "sigma") == 72);
+    std.debug.assert(@offsetOf(Result, "gap") == 96);
+    std.debug.assert(@offsetOf(Result, "gap_floor") == 104);
+    std.debug.assert(@offsetOf(Result, "residual") == 112);
+    std.debug.assert(@offsetOf(Result, "status") == 120);
+    std.debug.assert(@offsetOf(Result, "method") == 124);
+    std.debug.assert(@offsetOf(Result, "n_iters") == 128);
+    std.debug.assert(@sizeOf(Result) == 136); // incl. 4 tail-padding bytes
+}
 
 /// The `csar_result.method` value for a diagnostics union: which
 /// solver path produced the outcome (the union tag).
@@ -157,8 +200,8 @@ pub export fn csar_solve(
         .gap = nan,
         .gap_floor = nan,
         .residual = nan,
-        .status = -1,
-        .method = -1,
+        .status = CSAR_STATUS_NONE,
+        .method = CSAR_METHOD_NONE,
         .n_iters = 0,
     };
     if (out_lambdas) |l| @memset(l[0..n], 0);
@@ -176,15 +219,17 @@ pub export fn csar_solve(
         },
     };
 
+    // Exhaustive, no `else`: a new upstream error variant must fail
+    // here at compile time and get a deliberate code, not silently
+    // marshal as "internal bug".
     var outcome = csar.solve(ca, X, opts) catch |err| return switch (err) {
         error.InsufficientPoints => CSAR_INSUFFICIENT_POINTS,
         error.InvalidTolerance => CSAR_INVALID_TOLERANCE,
         error.CoplanarInput => CSAR_COPLANAR_INPUT,
         error.OutOfMemory => CSAR_OUT_OF_MEMORY,
-        // SolveError variants (NegativeEigenvalue / SingularMoment):
-        // internal-correctness bugs in the library, not the caller's
-        // input.
-        else => CSAR_INTERNAL,
+        // SolveError variants: internal-correctness bugs in the
+        // library, not the caller's input.
+        error.NegativeEigenvalue, error.SingularMoment => CSAR_INTERNAL,
     };
     defer outcome.deinit();
 

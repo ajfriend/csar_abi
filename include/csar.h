@@ -32,9 +32,22 @@ extern "C" {
 
 /* method in-param values; CSAR_METHOD_AUTO is upstream's alias for
  * its recommended path. csar_result.method reports the concrete path
- * that produced the outcome (-1 when the outcome carries none). */
+ * that produced the outcome (CSAR_METHOD_NONE when the outcome
+ * carries none). */
 #define CSAR_METHOD_TRUST 0
 #define CSAR_METHOD_AUTO 1
+
+/* "Not set" sentinels: csar_result.status unless the call returned
+ * CSAR_OK; csar_result.method on outcomes with no path tag. */
+#define CSAR_STATUS_NONE (-1)
+#define CSAR_METHOD_NONE (-1)
+
+/* Upstream's SolveOptions defaults, so bindings name them instead of
+ * each hardcoding a copy. */
+#define CSAR_DEFAULT_GAP_TOL 1e-6
+#define CSAR_DEFAULT_N_HULL 10
+#define CSAR_DEFAULT_COPLANARITY_TOL 1e-12
+#define CSAR_DEFAULT_MAX_OUTER 100
 
 /* The one declared result layout, shared by every target. status
  * selects which fields are meaningful:
@@ -43,7 +56,8 @@ extern "C" {
  *   precision_floor:  q, sigma, gap, gap_floor, method, n_iters
  *                     (last certified iterate; not a certified cone)
  *   infeasible:       residual
- * Fields the variant doesn't define hold NaN (doubles) / -1 / 0. */
+ * Fields the variant doesn't define hold NaN (doubles), the *_NONE
+ * sentinel (ints), or 0 (n_iters). */
 typedef struct csar_result {
     /* Eigenbasis of A, row-major: q[r*3 + c] = Q(r, c). Column i is
      * the unit eigenvector paired with sigma[i]; column 0 is the cone
@@ -57,14 +71,14 @@ typedef struct csar_result {
      * CSAR_STATUS_CONVERGED; on uncertified outcomes, the gap at the
      * last certified iterate. */
     double gap;
-    /* Smallest gap certifiable at f64 for this input's geometry
-     * (uncertified outcomes only). */
+    /* Smallest gap certifiable at f64 for this input's geometry. */
     double gap_floor;
-    /* Farkas witness magnitude (infeasible only). */
+    /* Farkas witness magnitude. */
     double residual;
-    /* CSAR_STATUS_* on CSAR_OK; -1 otherwise. */
+    /* CSAR_STATUS_* on CSAR_OK; CSAR_STATUS_NONE otherwise. */
     int32_t status;
-    /* CSAR_METHOD_* concrete path tag; -1 when the outcome has none. */
+    /* CSAR_METHOD_* concrete path tag; CSAR_METHOD_NONE if the
+     * outcome has none. */
     int32_t method;
     /* Total solver iterations. */
     uint32_t n_iters;

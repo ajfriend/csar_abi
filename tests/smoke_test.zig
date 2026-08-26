@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const capi = @import("capi");
+const meta = @import("abi_meta");
 
 // One octant: converges to a circular cone.
 const octant = [_]f64{ 1, 0, 0, 0, 1, 0, 0, 0, 1 };
@@ -28,7 +29,7 @@ const tiny_hex = [_]f64{
 const equator = [_]f64{ 1, 0, 0, 0.9238795325112867, 0.3826834323650898, 0, 0.7071067811865476, 0.7071067811865476, 0, 0.3826834323650898, 0.9238795325112867, 0 };
 
 fn solve(pts: []const f64, gap_tol: f64, max_outer: u32, out: *capi.Result, lambdas: ?[*]f64) i32 {
-    return capi.csar_solve(pts.ptr, @intCast(pts.len / 3), gap_tol, 10, 1e-12, max_outer, capi.CSAR_METHOD_AUTO, out, lambdas);
+    return capi.csar_solve(pts.ptr, @intCast(pts.len / 3), gap_tol, capi.CSAR_DEFAULT_N_HULL, capi.CSAR_DEFAULT_COPLANARITY_TOL, max_outer, capi.CSAR_METHOD_AUTO, out, lambdas);
 }
 
 test "converged: cone, certified gap, scattered lambdas" {
@@ -36,7 +37,10 @@ test "converged: cone, certified gap, scattered lambdas" {
     var lam = [_]f64{ -1, -1, -1 };
     try std.testing.expectEqual(capi.CSAR_OK, solve(&octant, 1e-6, 100, &r, &lam));
     try std.testing.expectEqual(capi.CSAR_STATUS_CONVERGED, r.status);
-    try std.testing.expectEqual(capi.CSAR_METHOD_TRUST, r.method);
+    // Under AUTO, assert only the ABI contract (a concrete path is
+    // reported) — WHICH path .auto resolves to is upstream's
+    // convention, pinned in csar_zig, free to change between minors.
+    try std.testing.expect(r.method != capi.CSAR_METHOD_NONE);
     try std.testing.expect(r.gap <= 1e-6);
     try std.testing.expectApproxEqAbs(1.0 / @sqrt(3.0), r.sigma[0], 1e-12);
     try std.testing.expect(r.sigma[2] / r.sigma[1] >= 1.0);
@@ -58,12 +62,19 @@ test "converged: NULL lambdas skips certificate marshaling" {
     try std.testing.expectEqual(capi.CSAR_STATUS_CONVERGED, r.status);
 }
 
+test "explicit method: TRUST maps through and is reported" {
+    var r: capi.Result = undefined;
+    try std.testing.expectEqual(capi.CSAR_OK, capi.csar_solve(&octant, 3, 1e-6, capi.CSAR_DEFAULT_N_HULL, capi.CSAR_DEFAULT_COPLANARITY_TOL, 100, capi.CSAR_METHOD_TRUST, &r, null));
+    try std.testing.expectEqual(capi.CSAR_STATUS_CONVERGED, r.status);
+    try std.testing.expectEqual(capi.CSAR_METHOD_TRUST, r.method);
+}
+
 test "infeasible: residual reported, lambdas zeroed, q is NaN" {
     var r: capi.Result = undefined;
     var lam = [_]f64{ -1, -1, -1 };
     try std.testing.expectEqual(capi.CSAR_OK, solve(&antipodal, 1e-6, 100, &r, &lam));
     try std.testing.expectEqual(capi.CSAR_STATUS_INFEASIBLE, r.status);
-    try std.testing.expectEqual(@as(i32, -1), r.method);
+    try std.testing.expectEqual(capi.CSAR_METHOD_NONE, r.method);
     try std.testing.expect(r.residual >= 0);
     try std.testing.expect(std.math.isNan(r.q[0]));
     // Zeroed on every non-converged outcome.
@@ -74,7 +85,7 @@ test "did_not_converge: budget of one, tolerance below the floor" {
     var r: capi.Result = undefined;
     try std.testing.expectEqual(capi.CSAR_OK, solve(&irregular, 1e-20, 1, &r, null));
     try std.testing.expectEqual(capi.CSAR_STATUS_DID_NOT_CONVERGE, r.status);
-    try std.testing.expectEqual(capi.CSAR_METHOD_TRUST, r.method);
+    try std.testing.expect(r.method != capi.CSAR_METHOD_NONE);
     try std.testing.expect(!std.math.isNan(r.gap));
     try std.testing.expect(!std.math.isNan(r.gap_floor));
 }
@@ -95,12 +106,12 @@ test "input errors: each code" {
     try std.testing.expectEqual(capi.CSAR_INVALID_TOLERANCE, solve(&octant, -1.0, 100, &r, null));
     try std.testing.expectEqual(capi.CSAR_COPLANAR_INPUT, solve(&equator, 1e-6, 100, &r, null));
     try std.testing.expectEqual(capi.CSAR_INVALID_METHOD, capi.csar_solve(&octant, 3, 1e-6, 10, 1e-12, 100, 99, &r, null));
-    // A failed call leaves status at -1: the outcome fields are not
-    // meaningful unless the call returned CSAR_OK.
-    try std.testing.expectEqual(@as(i32, -1), r.status);
+    // A failed call leaves status at the sentinel: the outcome fields
+    // are not meaningful unless the call returned CSAR_OK.
+    try std.testing.expectEqual(capi.CSAR_STATUS_NONE, r.status);
 }
 
-test "version doors" {
-    try std.testing.expectEqualStrings("0.1.0", std.mem.span(capi.csar_abi_version()));
-    try std.testing.expectEqualStrings("0.5.0", std.mem.span(capi.csar_upstream_version()));
+test "version doors report what build.zig.zon pins" {
+    try std.testing.expectEqualStrings(meta.abi_version, std.mem.span(capi.csar_abi_version()));
+    try std.testing.expectEqualStrings(meta.upstream_version, std.mem.span(capi.csar_upstream_version()));
 }

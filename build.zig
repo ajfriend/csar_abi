@@ -5,6 +5,29 @@
 
 const std = @import("std");
 
+// The manifest is the one source of version identity: the ABI version
+// is `.version`, and the upstream solver version is recovered from the
+// csar dependency pin ("csar-0.5.0-<digest>"). Both are injected into
+// capi.zig as the `abi_meta` module, so the version doors and a re-pin
+// can never drift apart.
+const Manifest = struct {
+    name: enum { csar_abi },
+    version: []const u8,
+    fingerprint: u64,
+    minimum_zig_version: []const u8,
+    dependencies: struct {
+        csar: struct { url: []const u8, hash: []const u8 },
+    },
+    paths: []const []const u8,
+};
+const zon: Manifest = @import("build.zig.zon");
+
+fn upstreamVersion(hash: []const u8) []const u8 {
+    const start = (std.mem.indexOfScalar(u8, hash, '-') orelse unreachable) + 1;
+    const end = std.mem.indexOfScalarPos(u8, hash, start, '-') orelse unreachable;
+    return hash[start..end];
+}
+
 pub fn build(b: *std.Build) void {
     // `standardTargetOptions` is load-bearing for csar_py: its meson
     // build passes `-Dtarget=<arch>-macos.<deployment_target>` so the
@@ -17,6 +40,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     }).module("csar");
 
+    const meta = b.addOptions();
+    meta.addOption([]const u8, "abi_version", zon.version);
+    meta.addOption([]const u8, "upstream_version", upstreamVersion(zon.dependencies.csar.hash));
+    const meta_mod = meta.createModule();
+
     const native_mod = b.createModule(.{
         .root_source_file = b.path("src/native.zig"),
         .target = target,
@@ -28,7 +56,10 @@ pub fn build(b: *std.Build) void {
         // (.so / .pyd), itself a shared library — its objects must be
         // position-independent.
         .pic = true,
-        .imports = &.{.{ .name = "csar", .module = csar_mod }},
+        .imports = &.{
+            .{ .name = "csar", .module = csar_mod },
+            .{ .name = "abi_meta", .module = meta_mod },
+        },
     });
 
     // Static, not dynamic: avoids the Windows MSVC CRT mismatch and
@@ -42,21 +73,35 @@ pub fn build(b: *std.Build) void {
     lib.installHeader(b.path("include/csar.h"), "csar.h");
     b.installArtifact(lib);
 
-    // Smoke: call the doors natively, switch on every status.
+    // Smoke: call the doors natively, switch on every status. The test
+    // imports capi as a module (it lives outside src/, which ships in
+    // the tarball) plus abi_meta, to check the doors against the same
+    // injected values.
     const capi_mod = b.createModule(.{
         .root_source_file = b.path("src/capi.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-        .imports = &.{.{ .name = "csar", .module = csar_mod }},
+        .imports = &.{
+            .{ .name = "csar", .module = csar_mod },
+            .{ .name = "abi_meta", .module = meta_mod },
+        },
     });
     const smoke = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("tests/smoke_test.zig"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
-        .imports = &.{.{ .name = "capi", .module = capi_mod }},
+        .imports = &.{
+            .{ .name = "capi", .module = capi_mod },
+            .{ .name = "abi_meta", .module = meta_mod },
+        },
     }) });
     const test_step = b.step("test", "Run the native smoke test");
     test_step.dependOn(&b.addRunArtifact(smoke).step);
+
+    // Compile everything without running or installing — the fast
+    // signal for editors and CI.
+    const check = b.step("check", "Compile the archive and the smoke test");
+    check.dependOn(&lib.step);
+    check.dependOn(&smoke.step);
 }

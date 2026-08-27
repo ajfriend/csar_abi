@@ -11,13 +11,19 @@ build:
 test:
     zig build test --summary all
 
+# The wasm32-freestanding module — must always build (the smoke that
+# punishes hidden OS assumptions). Size is a tracked number.
+wasm:
+    zig build wasm
+    ls -la zig-out/bin/csar.wasm
+
 # Compile everything without running or installing.
 check:
     zig build check
 
 # Everything CI checks that can run on this machine. Grows with the
-# wasm shape and the declaration-drift gate.
-ci: check test build
+# declaration-drift gate.
+ci: check test build wasm
 
 clean:
     rm -rf .zig-cache zig-out

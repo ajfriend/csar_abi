@@ -50,6 +50,10 @@ pub const CSAR_COPLANAR_INPUT: i32 = 3;
 pub const CSAR_OUT_OF_MEMORY: i32 = 4;
 pub const CSAR_INTERNAL: i32 = 5;
 pub const CSAR_INVALID_METHOD: i32 = 6;
+/// Returned only by a door backed by a bounded static input buffer
+/// (the wasm module's `solve`); `csar_solve` itself has no cap. In
+/// the shared table so there is exactly one code vocabulary.
+pub const CSAR_TOO_MANY_POINTS: i32 = 7;
 
 // `csar_result.status` values on CSAR_OK — which Outcome variant the
 // solver produced.

@@ -22,6 +22,10 @@ extern "C" {
 #define CSAR_OUT_OF_MEMORY 4
 #define CSAR_INTERNAL 5
 #define CSAR_INVALID_METHOD 6
+/* Returned only by a door backed by a bounded static input buffer
+ * (the wasm module's solve); csar_solve itself has no cap. In the
+ * shared table so there is exactly one code vocabulary. */
+#define CSAR_TOO_MANY_POINTS 7
 
 /* csar_result.status values on CSAR_OK — which outcome the solver
  * produced. */

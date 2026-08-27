@@ -70,8 +70,25 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
         .root_module = native_mod,
     });
-    lib.installHeader(b.path("include/csar.h"), "csar.h");
-    b.installArtifact(lib);
+
+    // Artifact validity is the producer's contract: zig 0.16's
+    // archiver writes members Apple's ld rejects ("not 8-byte
+    // aligned"; fixed upstream for 0.17), so on macOS targets the
+    // archive is repacked with ar before anything ships it —
+    // consumers install `lib`/`header` below and never see the raw
+    // archive. Drop the repack when the pin moves past 0.17.
+    // (dev.md "The archive and Apple's linker".)
+    const lib_file = if (target.result.os.tag == .macos) blk: {
+        const repack = b.addSystemCommand(&.{"sh"});
+        repack.addFileArg(b.path("scripts/repack_ar.sh"));
+        repack.addFileArg(lib.getEmittedBin());
+        break :blk repack.addOutputFileArg("libcsar.a");
+    } else lib.getEmittedBin();
+    const lib_name = if (target.result.os.tag == .windows) "csar.lib" else "libcsar.a";
+    b.addNamedLazyPath("lib", lib_file);
+    b.addNamedLazyPath("header", b.path("include/csar.h"));
+    b.getInstallStep().dependOn(&b.addInstallLibFile(lib_file, lib_name).step);
+    b.getInstallStep().dependOn(&b.addInstallHeaderFile(b.path("include/csar.h"), "csar.h").step);
 
     // Smoke: call the doors natively, switch on every status. The test
     // imports capi as a module (it lives outside src/, which ships in

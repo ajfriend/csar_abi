@@ -27,3 +27,5 @@ jobs:
           version="$(sed -nE 's/.*\.version = "([^"]+)".*/\1/p' build.zig.zon)"
           echo "tag $tag, .version $version"
           test "$tag" = "v$version"
+          # The one parallel-maintained copy: the changelog entry.
+          grep -q "^## $version" changelog.md

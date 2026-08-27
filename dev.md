@@ -21,11 +21,14 @@ Zig 0.16's archiver writes members 2-byte aligned with bogus modes;
 Xcode 26's ld rejects the archive ("member not 8-byte aligned") the
 moment a NON-zig linker consumes it. Zig-to-zig consumption (this
 repo's smoke, wasm) never crosses that boundary, which is why our
-tests stay green while a `cc … libcsar.a` fails on macOS. The fix
-lives at the boundary that crosses: csar_py's meson build repacks the
-archive with `ar` on darwin (`scripts/repack_ar.sh` there — NOT
-`libtool -static`, which silently skips misaligned members and emits
-an empty archive). Fixed upstream for zig 0.17; when the pin moves
+tests stay green while a raw `cc … libcsar.a` fails on macOS.
+Artifact validity is the producer's contract, so the fix lives here:
+on macOS targets, build.zig repacks the archive with `ar`
+(`scripts/repack_ar.sh` — NOT `libtool -static`, which silently
+skips misaligned members and emits an empty archive) before install,
+and exposes the result as the named lazy paths `lib` and `header`,
+which consumers (csar_py's `src/zig/build.zig`) install instead of
+the raw artifact. Fixed upstream for zig 0.17; when the pin moves
 past it, the repack becomes a pass-through and can be dropped.
 
 ## wasm

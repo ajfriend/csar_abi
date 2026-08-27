@@ -175,14 +175,30 @@ pub fn build(b: *std.Build) void {
     // The ABI reference as JSON, for the JS half of the gate (which
     // node runs — `just gate-js`; keeping it out of `zig build` leaves
     // the build hermetic). Reflection over capi, same as above.
-    const emit_json = b.addExecutable(.{ .name = "emit_abi_json", .root_module = b.createModule(.{
-        .root_source_file = b.path("gate/emit_abi_json.zig"),
-        .target = target,
-        .optimize = optimize,
+    //
+    // Host/Debug, not the requested target: this program is RUN during
+    // the build, and csar_py passes -Dtarget for its wheels. Built for
+    // the target it could not run at all — and the layout it reflects
+    // is target-invariant anyway (capi.zig's comptime asserts pin it
+    // on every target).
+    const host_capi_mod = b.createModule(.{
+        .root_source_file = b.path("src/capi.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .link_libc = true,
         .imports = &.{
-            .{ .name = "capi", .module = capi_mod },
+            .{ .name = "csar", .module = b.dependency("csar", .{
+                .target = b.graph.host,
+                .optimize = .Debug,
+            }).module("csar") },
             .{ .name = "abi_meta", .module = meta_mod },
         },
+    });
+    const emit_json = b.addExecutable(.{ .name = "emit_abi_json", .root_module = b.createModule(.{
+        .root_source_file = b.path("gate/emit_abi_json.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .imports = &.{.{ .name = "capi", .module = host_capi_mod }},
     }) });
     const write_json = b.addInstallFile(
         b.addRunArtifact(emit_json).captureStdOut(.{}),
@@ -194,9 +210,13 @@ pub fn build(b: *std.Build) void {
     // Compile everything without running or installing — the fast
     // signal for editors and CI. Includes the gate: its check IS its
     // compilation.
-    const check = b.step("check", "Compile the archive, the smoke test, the wasm module, and the gate");
+    const check = b.step("check", "Compile the archive, the smoke test, the wasm module, and the gates");
     check.dependOn(&lib.step);
     check.dependOn(&smoke.step);
     check.dependOn(&wasm.step);
     check.dependOn(&gate_test.step);
+    // The emitter carries comptime guards of its own (unhandled decl
+    // types, unhandled field shapes) — the fast signal should show
+    // them without needing node and a wasm build.
+    check.dependOn(&emit_json.step);
 }

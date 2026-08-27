@@ -32,4 +32,10 @@ jobs:
         with:
           version: 0.16.0
       - uses: extractions/setup-just@v3
+      # The JS gate runs under node. Pinned here and in mise.toml, the
+      # same way zig is — the runner's ambient version is not a
+      # dependency this repo should inherit silently.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - run: just ci

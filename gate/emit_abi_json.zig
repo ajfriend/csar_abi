@@ -10,13 +10,27 @@
 const std = @import("std");
 const capi = @import("capi");
 
+/// The ABI-relevant shape of a field's type, as the string the JS gate
+/// compares. Offsets alone are not the unit that breaks: retyping
+/// n_iters from u32 to i32 moves nothing, and csar.js would keep
+/// reading it through the wrong view.
+fn shape(comptime T: type) []const u8 {
+    return switch (@typeInfo(T)) {
+        .int => |i| std.fmt.comptimePrint("{s}{d}", .{ if (i.signedness == .signed) "i" else "u", i.bits }),
+        .float => |f| std.fmt.comptimePrint("f{d}", .{f.bits}),
+        .array => |a| std.fmt.comptimePrint("{s}[{d}]", .{ shape(a.child), a.len }),
+        else => @compileError("shape: unhandled type " ++ @typeName(T)),
+    };
+}
+
 pub fn main(init: std.process.Init) !void {
     var buf: [4096]u8 = undefined;
     var file_writer = std.Io.File.stdout().writer(init.io, &buf);
-    const w = &file_writer.interface;
+    var js: std.json.Stringify = .{ .writer = &file_writer.interface, .options = .{ .whitespace = .indent_2 } };
 
-    try w.print("{{\n  \"constants\": {{", .{});
-    var first = true;
+    try js.beginObject();
+    try js.objectField("constants");
+    try js.beginObject();
     inline for (@typeInfo(capi).@"struct".decls) |d| {
         if (comptime std.mem.startsWith(u8, d.name, "CSAR_")) {
             const v = @field(capi, d.name);
@@ -24,23 +38,32 @@ pub fn main(init: std.process.Init) !void {
             // which ones a host needs is the declaration's job, not
             // this emitter's. JSON numbers are f64, so the defaults
             // round-trip exactly.
-            switch (@TypeOf(v)) {
-                i32, u32, f64 => {
-                    try w.print("{s}\n    \"{s}\": {d}", .{ if (first) "" else ",", d.name, v });
-                    first = false;
+            switch (@typeInfo(@TypeOf(v))) {
+                .int, .float => {
+                    try js.objectField(d.name);
+                    try js.write(v);
                 },
                 else => @compileError("unhandled CSAR_ decl type: " ++ d.name),
             }
         }
     }
-    try w.print("\n  }},\n  \"layout\": {{", .{});
-    inline for (@typeInfo(capi.Result).@"struct".fields, 0..) |f, i| {
-        try w.print("{s}\n    \"{s}\": {d}", .{
-            if (i == 0) "" else ",",
-            f.name,
-            @offsetOf(capi.Result, f.name),
-        });
+    try js.endObject();
+
+    try js.objectField("layout");
+    try js.beginObject();
+    inline for (@typeInfo(capi.Result).@"struct".fields) |f| {
+        try js.objectField(f.name);
+        try js.beginObject();
+        try js.objectField("offset");
+        try js.write(@offsetOf(capi.Result, f.name));
+        try js.objectField("type");
+        try js.write(comptime shape(f.type));
+        try js.endObject();
     }
-    try w.print(",\n    \"sizeof\": {d}\n  }}\n}}\n", .{@sizeOf(capi.Result)});
-    try w.flush();
+    try js.endObject();
+
+    try js.objectField("sizeof");
+    try js.write(@sizeOf(capi.Result));
+    try js.endObject();
+    try file_writer.interface.flush();
 }

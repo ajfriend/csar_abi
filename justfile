@@ -11,8 +11,7 @@ build:
 test:
     zig build test --summary all
 
-# The wasm32-freestanding module — must always build (the smoke that
-# punishes hidden OS assumptions). Size is a tracked number.
+# The wasm32-freestanding module. Size is a tracked number.
 wasm:
     zig build wasm
     ls -la zig-out/bin/csar.wasm

@@ -1,9 +1,10 @@
 //! The one C door surface over `csar.solve`. Every non-Zig consumer —
 //! the native archive and the wasm module alike — goes through the
-//! doors in this file. The comptime roots (`native.zig`, and the wasm
-//! root once it lands) select what ships per target, and the
-//! declarations (`include/csar.h`, `csar.js`) restate this file for
-//! hosts that cannot read it; this file is the source of truth.
+//! doors in this file. The comptime roots (`native.zig`, `wasm.zig`)
+//! select what ships per target, and the declarations
+//! (`include/csar.h`, `csar.js`) restate the ABI for hosts that
+//! cannot read it; this file is the source of truth for the shared
+//! surface (the wasm root adds browser-only doors of its own).
 //!
 //! Door discipline: `csar_` prefix on every symbol; fixed-width
 //! scalars only (no `size_t` — wasm32's usize is 32 bits); the call
@@ -54,6 +55,10 @@ pub const CSAR_INVALID_METHOD: i32 = 6;
 /// (the wasm module's `solve`); `csar_solve` itself has no cap. In
 /// the shared table so there is exactly one code vocabulary.
 pub const CSAR_TOO_MANY_POINTS: i32 = 7;
+/// The wasm module's static input-buffer cap (points per solve).
+/// Lives here, beside its error code, so the declarations and the
+/// drift gate see one contract; wasm.zig sizes its buffers from it.
+pub const CSAR_WASM_MAX_PTS: u32 = 4096;
 
 // `csar_result.status` values on CSAR_OK — which Outcome variant the
 // solver produced.

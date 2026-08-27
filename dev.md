@@ -2,9 +2,12 @@
 
 ## wasm
 
-The browser artifact is `ReleaseSmall`, hardcoded in build.zig
-regardless of `-Doptimize`, and forced on the `csar` dependency too —
-it ships to browsers, and size is the number `just wasm` prints.
+**Optimize mode.** The browser artifact is ReleaseSmall, hardcoded in
+build.zig (rationale there). Measured against ReleaseFast under node
+on an M-series laptop (2026-08): Fast solves 1.3–1.5x faster
+(7.5 → 5.0 µs at n = 9; 570 → 439 µs at n = 1009) at ~1.75x the
+stripped code size (42 KB → 73 KB). Both sit far inside a 16 ms frame
+budget — the worst measured case is ~3.5% of a frame — so size wins.
 
 **No `-Dsimd` knob.** The predecessor build carried a simd128 option
 with the measurement recorded against it: no effect — 592 vs 592 µs on

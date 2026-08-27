@@ -129,10 +129,38 @@ pub fn build(b: *std.Build) void {
     const wasm_step = b.step("wasm", "Build the wasm32-freestanding module");
     wasm_step.dependOn(&b.addInstallArtifact(wasm, .{}).step);
 
+    // ---- The declaration-drift gate (`zig build gate`). ----
+    // include/csar.h, translated by the same clang frontend that
+    // compiles C consumers, is imported beside capi and compared at
+    // comptime — constants by value, csar_result by offsets and size,
+    // doors by ABI shape. Compiling gate/gate.zig IS the check; drift
+    // is a compile error naming the decl. Hand-mirrored declarations
+    // are how the predecessor shims drifted; this makes the mirror
+    // checkable. csar.js joins via the built module's export section
+    // when it lands.
+    const hdr_mod = b.addTranslateC(.{
+        .root_source_file = b.path("include/csar.h"),
+        .target = target,
+        .optimize = optimize,
+    }).createModule();
+    const gate_test = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("gate/gate.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "capi", .module = capi_mod },
+            .{ .name = "csar_h", .module = hdr_mod },
+        },
+    }) });
+    const gate = b.step("gate", "Check the declarations against capi.zig");
+    gate.dependOn(&b.addRunArtifact(gate_test).step);
+
     // Compile everything without running or installing — the fast
-    // signal for editors and CI.
-    const check = b.step("check", "Compile the archive, the smoke test, and the wasm module");
+    // signal for editors and CI. Includes the gate: its check IS its
+    // compilation.
+    const check = b.step("check", "Compile the archive, the smoke test, the wasm module, and the gate");
     check.dependOn(&lib.step);
     check.dependOn(&smoke.step);
     check.dependOn(&wasm.step);
+    check.dependOn(&gate_test.step);
 }

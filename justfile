@@ -20,9 +20,13 @@ wasm:
 check:
     zig build check
 
-# Everything CI checks that can run on this machine. Grows with the
-# declaration-drift gate.
-ci: check test build wasm
+# The declaration-drift gate: csar.h diffed against capi.zig, as a C
+# compiler sees it.
+gate:
+    zig build gate
+
+# Everything CI checks that can run on this machine.
+ci: check test build wasm gate
 
 clean:
     rm -rf .zig-cache zig-out

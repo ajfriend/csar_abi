@@ -1,0 +1,39 @@
+name: ci
+
+# A bare `push:` alongside `pull_request:` runs every PR commit twice: both
+# events fire for a same-repo branch, and the concurrency group below can't
+# dedupe them (github.ref is refs/heads/<branch> for one and refs/pull/N/merge
+# for the other). Restricting push to main gives each commit exactly one run —
+# PRs via pull_request, main (including merge commits) via push.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# One job per `just ci` recipe, in parallel, so wall time is the slowest
+# recipe rather than the sum. What each recipe does: `just --list`.
+jobs:
+  just:
+    strategy:
+      fail-fast: false # one recipe failing must not cancel the others
+      matrix:
+        recipe: [check, test, build, wasm, gate]
+    name: ${{ matrix.recipe }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+          # One cache per recipe — setup-zig's default key is the job id,
+          # shared by all matrix entries.
+          cache-key: ${{ matrix.recipe }}
+      - uses: extractions/setup-just@v3
+      - run: just ${{ matrix.recipe }}

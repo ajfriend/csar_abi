@@ -129,6 +129,37 @@ pub fn build(b: *std.Build) void {
     const wasm_step = b.step("wasm", "Build the wasm32-freestanding module");
     wasm_step.dependOn(&b.addInstallArtifact(wasm, .{}).step);
 
+    // ---- The declaration-drift gate (`zig build gate`). ----
+    // Two emitters print the same ABI reference — gate/emit_ref.zig by
+    // comptime reflection over capi (the source of truth), and
+    // gate/emit_ref.c compiled against include/csar.h (the declaration
+    // as a C compiler sees it: #define values, offsetof, sizeof) — and
+    // the step diffs them. Hand-mirrored declarations are how the
+    // predecessor shims drifted; this makes the mirror checkable.
+    // csar.js joins via the built module's export section when it
+    // lands.
+    const emit_zig = b.addExecutable(.{ .name = "emit_ref_zig", .root_module = b.createModule(.{
+        .root_source_file = b.path("gate/emit_ref.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "capi", .module = capi_mod },
+        },
+    }) });
+    const emit_c_mod = b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    emit_c_mod.addCSourceFile(.{ .file = b.path("gate/emit_ref.c") });
+    emit_c_mod.addIncludePath(b.path("include"));
+    const emit_c = b.addExecutable(.{ .name = "emit_ref_c", .root_module = emit_c_mod });
+    const drift_diff = b.addSystemCommand(&.{ "diff", "-u" });
+    drift_diff.addFileArg(b.addRunArtifact(emit_zig).captureStdOut(.{}));
+    drift_diff.addFileArg(b.addRunArtifact(emit_c).captureStdOut(.{}));
+    const gate = b.step("gate", "Diff the declarations against capi.zig");
+    gate.dependOn(&drift_diff.step);
+
     // Compile everything without running or installing — the fast
     // signal for editors and CI.
     const check = b.step("check", "Compile the archive, the smoke test, and the wasm module");

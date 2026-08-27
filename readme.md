@@ -8,10 +8,10 @@ and publishes it as:
 - **two artifact shapes** — a native static archive, and a
   `wasm32-freestanding` module (built from two comptime roots, so the
   module graph, not an export list, decides what each ships), and
-- **two declarations of the same contract** — `include/csar.h` for
-  hosts with a C compiler, and `csar.js` for hosts without one, where
-  the declaration must also carry what a compiler would otherwise
-  handle (struct byte offsets, code tables, instantiation).
+- **two declarations of the same contract** — `include/csar.h` for C
+  callers, and `csar.js` for JavaScript ones, which additionally
+  carries what a C compiler would otherwise do for you (struct byte
+  offsets, code tables, instantiating the module).
 
 Declarations live here because lockstep is only enforceable inside
 one repo — CI diffs both against `capi.zig`. Idiomatic bindings

@@ -17,23 +17,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# One job per `just ci` recipe, in parallel, so wall time is the slowest
-# recipe rather than the sum. What each recipe does: `just --list`.
+# One job running `just ci`, deliberately NOT the reference repo's
+# recipe matrix: every recipe here finishes in seconds, so per-job
+# setup (runner spinup, zig install, dependency fetch) would dominate
+# five times over, and each independent csar-tarball fetch is its own
+# network-flake chance. Reintroduce the matrix when a recipe grows
+# past about a minute.
 jobs:
-  just:
-    strategy:
-      fail-fast: false # one recipe failing must not cancel the others
-      matrix:
-        recipe: [check, test, build, wasm, gate]
-    name: ${{ matrix.recipe }}
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
-          # One cache per recipe — setup-zig's default key is the job id,
-          # shared by all matrix entries.
-          cache-key: ${{ matrix.recipe }}
       - uses: extractions/setup-just@v3
-      - run: just ${{ matrix.recipe }}
+      - run: just ci

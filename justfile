@@ -20,8 +20,8 @@ wasm:
 check:
     zig build check
 
-# The declaration-drift gate: csar.h diffed against capi.zig, as a C
-# compiler sees it.
+# The declaration-drift gate: csar.h translated and compared against
+# capi at comptime.
 gate:
     zig build gate
 

@@ -25,4 +25,7 @@ This consolidates the two hand-rolled shims that preceded it (the one
 vendored inside `csar_py`, and the standalone `csar_wasm`), which had
 already drifted apart in error codes, naming, and surface.
 
-Status: planning. The plan lives in the issue tracker.
+Status: the native shape (archive + `csar.h`), the wasm module, and
+the declaration-drift gate are live; `csar.js` and the browser
+consumers land next. The plan lives in the issue tracker; releases
+are tagged (dev.md "Releasing").

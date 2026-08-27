@@ -1,5 +1,33 @@
 # csar_abi — dev notes
 
+## Releasing
+
+Tags are deliberate ABI pins: consumers fetch `vX.Y.Z` by URL+hash and
+never track main. Procedure: land the release PR, then tag the merge
+commit `v<version>` matching `build.zig.zon`'s `.version` — the
+release-check workflow alarms on a mismatch after the push. Release
+name is the version; the body is a sentence pointing at the PRs;
+changelog.md entries are equally short.
+
+**Versioning posture.** The ABI — doors, `csar_result`, code tables,
+declarations — drives bumps, not upstream releases: a csar re-pin with
+no ABI change is a patch bump here (the version doors self-report both
+identities, so nothing is lost). An ABI break is a major bump once
+past 1.0; pre-1.0, a minor.
+
+## The archive and Apple's linker
+
+Zig 0.16's archiver writes members 2-byte aligned with bogus modes;
+Xcode 26's ld rejects the archive ("member not 8-byte aligned") the
+moment a NON-zig linker consumes it. Zig-to-zig consumption (this
+repo's smoke, wasm) never crosses that boundary, which is why our
+tests stay green while a `cc … libcsar.a` fails on macOS. The fix
+lives at the boundary that crosses: csar_py's meson build repacks the
+archive with `ar` on darwin (`scripts/repack_ar.sh` there — NOT
+`libtool -static`, which silently skips misaligned members and emits
+an empty archive). Fixed upstream for zig 0.17; when the pin moves
+past it, the repack becomes a pass-through and can be dropped.
+
 ## wasm
 
 **Optimize mode.** The browser artifact is ReleaseSmall, hardcoded in

@@ -99,9 +99,40 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run the native smoke test");
     test_step.dependOn(&b.addRunArtifact(smoke).step);
 
+    // ---- The wasm module (`zig build wasm`). ----
+    // ReleaseSmall regardless of -Doptimize, forced on the csar
+    // dependency too: this artifact ships to browsers. No -Dsimd
+    // knob — simd128 was measured to change nothing (dev.md "wasm").
+    const wasm_target = b.resolveTargetQuery(.{
+        .cpu_arch = .wasm32,
+        .os_tag = .freestanding,
+    });
+    const csar_wasm_mod = b.dependency("csar", .{
+        .target = wasm_target,
+        .optimize = .ReleaseSmall,
+    }).module("csar");
+    const wasm_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm.zig"),
+        .target = wasm_target,
+        .optimize = .ReleaseSmall,
+        .imports = &.{
+            .{ .name = "csar", .module = csar_wasm_mod },
+            .{ .name = "abi_meta", .module = meta_mod },
+        },
+    });
+    // An "executable" with no entry point: rdynamic exports every
+    // analyzed `export fn` — capi's doors plus wasm.zig's
+    // static-buffer doors, and nothing else (module-graph selection).
+    const wasm = b.addExecutable(.{ .name = "csar", .root_module = wasm_mod });
+    wasm.entry = .disabled;
+    wasm.rdynamic = true;
+    const wasm_step = b.step("wasm", "Build the wasm32-freestanding module");
+    wasm_step.dependOn(&b.addInstallArtifact(wasm, .{}).step);
+
     // Compile everything without running or installing — the fast
     // signal for editors and CI.
-    const check = b.step("check", "Compile the archive and the smoke test");
+    const check = b.step("check", "Compile the archive, the smoke test, and the wasm module");
     check.dependOn(&lib.step);
     check.dependOn(&smoke.step);
+    check.dependOn(&wasm.step);
 }

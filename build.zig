@@ -172,6 +172,25 @@ pub fn build(b: *std.Build) void {
     const gate = b.step("gate", "Check the declarations against capi.zig");
     gate.dependOn(&b.addRunArtifact(gate_test).step);
 
+    // The ABI reference as JSON, for the JS half of the gate (which
+    // node runs — `just gate-js`; keeping it out of `zig build` leaves
+    // the build hermetic). Reflection over capi, same as above.
+    const emit_json = b.addExecutable(.{ .name = "emit_abi_json", .root_module = b.createModule(.{
+        .root_source_file = b.path("gate/emit_abi_json.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "capi", .module = capi_mod },
+            .{ .name = "abi_meta", .module = meta_mod },
+        },
+    }) });
+    const write_json = b.addInstallFile(
+        b.addRunArtifact(emit_json).captureStdOut(.{}),
+        "abi.json",
+    );
+    const json_step = b.step("abi-json", "Emit the ABI reference as JSON");
+    json_step.dependOn(&write_json.step);
+
     // Compile everything without running or installing — the fast
     // signal for editors and CI. Includes the gate: its check IS its
     // compilation.

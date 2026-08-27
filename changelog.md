@@ -1,5 +1,12 @@
 # changelog
 
+## 0.2.0
+
+New declaration: `csar.js`, the JavaScript counterpart to `csar.h` —
+the code tables, the `csar_result` layout, and `init`/`solve` over the
+wasm module. `just gate-js` checks it against capi's values and the
+built module's exports. No change to the C surface. (PR #16.)
+
 ## 0.1.1
 
 Ship `scripts/` in the package `.paths`: v0.1.0's tarball stripped

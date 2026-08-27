@@ -1,6 +1,6 @@
 .{
     .name = .csar_abi,
-    .version = "0.1.1",
+    .version = "0.2.0",
     .fingerprint = 0x1fa2b3ed55dc7e5a,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
@@ -14,6 +14,8 @@
         "build.zig.zon",
         "src",
         "include",
+        // csar.js is a declaration this repo ships, like include/.
+        "csar.js",
         // build.zig runs the darwin repack from here — consumers'
         // unpacked trees need it, not just this checkout.
         "scripts",

@@ -1,5 +1,12 @@
 # changelog
 
+## 0.2.1
+
+Re-pin the solver at csar v0.7.0 (was 0.5.0): the chart-form gap
+evaluation, so certifications are oracle-honest and typical solves are
+a few percent faster. No change to the C or JS surface; the version
+doors report the new pin.
+
 ## 0.2.0
 
 New declaration: `csar.js`, the JavaScript counterpart to `csar.h` —
